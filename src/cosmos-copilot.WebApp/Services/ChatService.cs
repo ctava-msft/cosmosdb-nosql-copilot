@@ -27,8 +27,9 @@ public class ChatService
         var productMaxResults = chatOptions.Value.ProductMaxResults;
 
         _maxContextWindow = Int32.TryParse(maxContextWindow, out _maxContextWindow) ? _maxContextWindow : 3;
-        _cacheSimilarityScore = Double.TryParse(cacheSimilarityScore, out _cacheSimilarityScore) ? _cacheSimilarityScore : 0.95;
-        _productMaxResults = Int32.TryParse(productMaxResults, out _productMaxResults) ? _productMaxResults: 10;
+        //_cacheSimilarityScore = Double.TryParse(cacheSimilarityScore, out _cacheSimilarityScore) ? _cacheSimilarityScore : 0.99;
+        _cacheSimilarityScore = .8; //Force a lower similarity score for now
+        _productMaxResults = Int32.TryParse(productMaxResults, out _productMaxResults) ? _productMaxResults: 5;
 
         _tokenizer = Tokenizer.CreateTiktokenForModel("gpt-4o");
     }
@@ -37,7 +38,7 @@ public class ChatService
     /// Get a completion for a user prompt from Azure OpenAi Service
     /// This is the main LLM Workflow for the Chat Service
     /// </summary>
-    public async Task<Message> GetChatCompletionAsync(string tenantId, string userId, string sessionId, string promptText)
+   public async Task<Message> GetChatCompletionAsync(string tenantId, string userId, string sessionId, string promptText)
     {
 
         //Create a message object for the new User Prompt and calculate the tokens for the prompt
@@ -59,25 +60,21 @@ public class ChatService
         //Cache hit, return the cached completion
         if (!string.IsNullOrEmpty(cacheResponse))
         {
-            chatMessage.CacheHit = true;
-            chatMessage.Completion = cacheResponse;
+        chatMessage.CacheHit = true;
+        chatMessage.Completion = cacheResponse;
 
-            //Persist the prompt/completion, elapsed time, update the session tokens
-            await UpdateSessionAndMessage(tenantId, userId, sessionId, chatMessage);
+        //Persist the prompt/completion, elapsed time, update the session tokens
+        await UpdateSessionAndMessage(tenantId, userId, sessionId, chatMessage);
 
-            return chatMessage;
+        return chatMessage;
         }
 
         //RAG Pattern Vector search results for product data
-        List<Product> searchResults = await _semanticKernelService.SearchProductsAsync(promptVectors, _productMaxResults);
-
-        // RAG Pattern Hybrid search results for product data
-        // Only use this if you deployed into one of the regions that supports Hybrid Search
-        //List<Product> searchResults = await _cosmosDbService.HybridSearchProductsAsync(promptText, promptVectors, _productMaxResults);
+        List<Cosmos.Copilot.Models.Product> vectorSearchResults = await _semanticKernelService.SearchProductsAsync(promptVectors, _productMaxResults);
 
         //Call Semantic Kernel to generate a new completion
         (chatMessage.Completion, chatMessage.GenerationTokens, chatMessage.CompletionTokens) = 
-            await _semanticKernelService.GetRagCompletionAsync(contextWindow, searchResults);
+            await _semanticKernelService.GetRagCompletionAsync(contextWindow, vectorSearchResults);
 
         //Cache the prompts in the current context window and their vectors with the generated completion
         await _cosmosDbService.CachePutAsync(new CacheItem(promptVectors, prompts, chatMessage.Completion));

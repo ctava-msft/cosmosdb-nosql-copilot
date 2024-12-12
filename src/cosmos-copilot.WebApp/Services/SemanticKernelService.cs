@@ -2,6 +2,7 @@
 using Cosmos.Copilot.Models;
 using Cosmos.Copilot.Options;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.VectorData;
 using Microsoft.ML.Tokenizers;
@@ -41,6 +42,8 @@ public class SemanticKernelService
     /// <summary>
     /// System prompt to send with user prompts as a Retail AI Assistant for chat session
     /// </summary>
+    //private readonly string _systemPromptRetailAssistant = @"";
+
     private readonly string _systemPromptRetailAssistant = @"
         You are an intelligent assistant for the Cosmic Works Bike Company. 
         You are designed to provide helpful answers to user questions about 
@@ -97,7 +100,7 @@ public class SemanticKernelService
         // Initialize the Semantic Kernel
         var builder = Kernel.CreateBuilder();
 
-        //Add Azure OpenAI chat completion service
+        //Add Azure OpenAI client to the Semantic Kernel
         builder.AddOpenAIChatCompletion(modelId: completionDeploymentName, openAIClient: openAiClient);
 
         //Add Azure OpenAI text embedding generation service
@@ -137,11 +140,11 @@ public class SemanticKernelService
     {
 
         //Manage token consumption per request by trimming the amount of vector search data sent to the model
-        string ragDataString = LimitPayloadToMaxRagTokens(_maxRagTokens, ragData);
+        string modelData = string.Join(", ", ragData.Select(p => p.ToString()));
+        string resultString = TrimToTokenLimit(_maxRagTokens, modelData);
 
-        //Add the system prompt and vector search data to the chat history
         var skChatHistory = new ChatHistory();
-        skChatHistory.AddSystemMessage(_systemPromptRetailAssistant + ragDataString);
+        skChatHistory.AddSystemMessage(_systemPromptRetailAssistant + resultString);
 
         //Manage token consumption by trimming the amount of chat history sent to the model
         //Useful if the chat history is very large. It can also be summarized before sending to the model
@@ -191,25 +194,18 @@ public class SemanticKernelService
     public async Task<List<Product>> SearchProductsAsync(ReadOnlyMemory<float> promptVectors, int productMaxResults)
     {
         var options = new VectorSearchOptions { VectorPropertyName = "vectors", Top = productMaxResults };
-
         //Call Semantic Kernel to perform the vector search
         var searchResult = await _productContainer.VectorizedSearchAsync(promptVectors, options);
-
         var resultRecords = new List<VectorSearchResult<Product>>();
         await foreach (var result in searchResult.Results)
         {
             resultRecords.Add(result);
         }
-
+        string productsString = JsonSerializer.Serialize(resultRecords);
         List<Product> productResults = new();
-
         //add the product vector search results to products list
         productResults.AddRange(resultRecords.Select(r => r.Record));
         return productResults;
-
-        //Serialize List<Product> to a JSON string to send to OpenAI
-        //string productsString = JsonSerializer.Serialize(resultRecords);
-        //return productsString;
     }
 
     /// <summary>
@@ -242,10 +238,23 @@ public class SemanticKernelService
     public async Task<float[]> GetEmbeddingsAsync(string text)
     {
         var embeddings = await kernel.GetRequiredService<ITextEmbeddingGenerationService>().GenerateEmbeddingAsync(text);
-
         float[] embeddingsArray = embeddings.ToArray();
-
         return embeddingsArray;
+    }
+
+    /// <summary>
+    /// Trims the text passed in using a tokenizer.
+    /// </summary>
+    /// <param name="maxTokens">Amount of tokens to calculate the amount of text to limit</param>
+    /// <param name="text">Text content to trim</param>
+    /// <returns>The reduced text</returns>
+    private string TrimToTokenLimit(int maxTokens, string text)
+    {
+        // Get the index of the string up to the maxTokens
+        int trimIndex = _tokenizer.IndexOfTokenCount(text, maxTokens, out string? processedText, out _);
+
+        // Return the trimmed text based upon the maxTokens
+        return text.Substring(0, trimIndex);
     }
 
     /// <summary>
@@ -274,13 +283,12 @@ public class SemanticKernelService
                 { "max_tokens", 1000  }
             }
         };
-
         var result = await kernel.GetRequiredService<IChatCompletionService>().GetChatMessageContentAsync(skChatHistory, settings);
 
-        CompletionsUsage completionUsage = (CompletionsUsage)result.Metadata!["Usage"]!;
+        ChatTokenUsage completionUsage = (ChatTokenUsage)result.Metadata!["Usage"]!;
 
         string completion = result.Items[0].ToString()!;
-        int tokens = completionUsage.CompletionTokens;
+        int tokens = completionUsage.OutputTokenCount;
 
         return (completion, tokens);
     }
@@ -305,7 +313,6 @@ public class SemanticKernelService
                 { "max_tokens", 100 }
             }
         };
-
         var result = await kernel.GetRequiredService<IChatCompletionService>().GetChatMessageContentAsync(skChatHistory, settings);
 
         string completion = result.Items[0].ToString()!;
