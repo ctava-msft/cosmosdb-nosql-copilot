@@ -103,18 +103,19 @@ public class SemanticKernelService
         builder.AddOpenAIChatCompletion(modelId: completionDeploymentName, openAIClient: openAiClient);
 
         //Add OpenAI text embedding generation service
-        //builder.AddOpenAITextEmbeddingGeneration(modelId: embeddingDeploymentName, openAIClient: openAiClient, dimensions: 1536);
-        var deploymentName =  Environment.GetEnvironmentVariable("LLM_MODEL_DEPLOYMENT_NAME");
-        var apiKey = Environment.GetEnvironmentVariable("API_KEY");
-        var endpoint = Environment.GetEnvironmentVariable("ENDPOINT");
+        builder.AddOpenAITextEmbeddingGeneration(modelId: embeddingDeploymentName, openAIClient: openAiClient, dimensions: 1536);
+        
+        // var deploymentName =  Environment.GetEnvironmentVariable("LLM_MODEL_DEPLOYMENT_NAME");
+        // var apiKey = Environment.GetEnvironmentVariable("API_KEY");
+        // var endpoint = Environment.GetEnvironmentVariable("ENDPOINT");
 
-        // builder.AddAzureOpenAITextEmbeddingGeneration(deploymentName: deploymentName, apiKey: apiKey, endpoint: endpoint);
-        #pragma warning disable SKEXP0010
-        builder.Services.AddAzureOpenAITextEmbeddingGeneration(
-            deploymentName: deploymentName,
-            endpoint: endpoint,
-            apiKey: apiKey
-        );
+        //builder.AddAzureOpenAITextEmbeddingGeneration(deploymentName: deploymentName, apiKey: apiKey, endpoint: endpoint);
+        // #pragma warning disable SKEXP0010
+        // builder.Services.AddAzureOpenAITextEmbeddingGeneration(
+        //     deploymentName: deploymentName,
+        //     endpoint: endpoint,
+        //     apiKey: apiKey
+        // );
  
         //Add Azure CosmosDB NoSql client and Database to the Semantic Kernel
         builder.Services.AddSingleton<Database>(

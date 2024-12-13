@@ -93,7 +93,7 @@ static class ProgramExtensions
     public static void RegisterServices(this IServiceCollection services)
     {
         services.AddSingleton<CosmosDbService, CosmosDbService>();
-        // services.AddSingleton<OpenAiService, OpenAiService>();
+        services.AddSingleton<LMService, LMService>();
         services.AddSingleton<SemanticKernelService, SemanticKernelService>();
         services.AddSingleton<ChatService, ChatService>();
     }
